@@ -1,19 +1,16 @@
-from flask import Blueprint, request, jsonify
+# backend/views/myrequest.py
+from flask import Blueprint, request, jsonify # Keep flask.request here for API route handling
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db # Import db from the main app instance
-from models import Item, User, Request # Import Item, User, and Request models
+from extensions import db # Import from extensions
+from models import Item, User, Request # Import models
 from datetime import datetime
 
-# Create a Blueprint for request management
-request_bp = Blueprint('request', __name__)
+# Define the Blueprint for request management
+request_bp = Blueprint('my_request', __name__) # <--- Blueprint variable named 'request_bp'
 
 @request_bp.route('/requests', methods=['POST'])
 @jwt_required()
 def create_request():
-    """
-    Allows a logged-in user to send a request for an item.
-    Requires item_id in JSON body.
-    """
     current_user_identity = get_jwt_identity()
     requester_id = current_user_identity['id']
     
@@ -27,11 +24,9 @@ def create_request():
     if not item:
         return jsonify({"msg": "Item not found"}), 404
     
-    # Prevent requesting your own item
     if item.user_id == requester_id:
         return jsonify({"msg": "Cannot request your own item"}), 400
 
-    # Check if a pending request already exists from this requester for this item
     existing_request = Request.query.filter_by(
         item_id=item_id,
         requester_id=requester_id,
@@ -44,7 +39,7 @@ def create_request():
     new_request = Request(
         item_id=item_id,
         requester_id=requester_id,
-        item_owner_id=item.user_id, # The owner of the item
+        item_owner_id=item.user_id,
         status='pending',
         requested_at=datetime.utcnow()
     )
@@ -57,9 +52,6 @@ def create_request():
 @request_bp.route('/requests/sent', methods=['GET'])
 @jwt_required()
 def get_sent_requests():
-    """
-    Allows a logged-in user to view all requests they have sent.
-    """
     current_user_identity = get_jwt_identity()
     requester_id = current_user_identity['id']
 
@@ -82,17 +74,12 @@ def get_sent_requests():
 @request_bp.route('/requests/received', methods=['GET'])
 @jwt_required()
 def get_received_requests():
-    """
-    Allows a logged-in user to view all requests they have received for their items.
-    """
     current_user_identity = get_jwt_identity()
     item_owner_id = current_user_identity['id']
 
-    # Find items owned by the current user
     user_items = Item.query.filter_by(user_id=item_owner_id).all()
     user_item_ids = [item.id for item in user_items]
 
-    # Find requests where the item_id belongs to one of the current user's items
     received_requests = Request.query.filter(
         Request.item_id.in_(user_item_ids),
         Request.item_owner_id == item_owner_id
@@ -114,10 +101,6 @@ def get_received_requests():
 @request_bp.route('/requests/<int:request_id>/status', methods=['PUT'])
 @jwt_required()
 def update_request_status(request_id):
-    """
-    Allows the item owner to update the status of a specific request.
-    Only 'accepted' or 'rejected' status changes are allowed.
-    """
     current_user_identity = get_jwt_identity()
     current_user_id = current_user_identity['id']
     
@@ -132,11 +115,9 @@ def update_request_status(request_id):
     if not req:
         return jsonify({"msg": "Request not found"}), 404
     
-    # Ensure the current user is the owner of the item associated with the request
     if req.item_owner_id != current_user_id:
         return jsonify({"msg": "Unauthorized: You do not own this request"}), 403
 
-    # Only allow status change from 'pending'
     if req.status != 'pending':
         return jsonify({"msg": f"Request status is already '{req.status}'. Cannot change."}), 400
 

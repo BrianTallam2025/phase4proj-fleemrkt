@@ -1,18 +1,16 @@
+# backend/views/item.py
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db # Import db from the main app instance
-from models import Item, User # Import Item and User models
+from extensions import db # Import from extensions
+from models import Item, User # Import models
 from datetime import datetime
 
-# Create a Blueprint for item management
-item_bp = Blueprint('item', __name__)
+# Define the Blueprint for item management
+item_bp = Blueprint('item', __name__) # <--- Blueprint variable named 'item_bp'
 
 @item_bp.route('/items', methods=['POST'])
 @jwt_required()
 def create_item():
-    """
-    Allows a logged-in user to create a new item listing.
-    """
     current_user_identity = get_jwt_identity()
     user_id = current_user_identity['id']
 
@@ -40,13 +38,9 @@ def create_item():
 
 @item_bp.route('/items', methods=['GET'])
 def get_items():
-    """
-    Returns a list of all available items.
-    """
     items = Item.query.filter_by(is_available=True).all()
     item_list = []
     for item in items:
-        # Fetch owner username for display
         owner_username = User.query.get(item.user_id).username if item.user_id else "Unknown"
         item_list.append({
             "id": item.id,
