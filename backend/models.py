@@ -1,5 +1,8 @@
+# backend/models.py
+# This file defines your database models using SQLAlchemy.
+
 from datetime import datetime
-from extensions import db, bcrypt
+from extensions import db, bcrypt # Correctly importing from extensions
 
 # User Model: Represents a user in the system (regular or admin).
 class User(db.Model):
@@ -7,25 +10,17 @@ class User(db.Model):
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    # Role can be 'user' or 'admin'
     role = db.Column(db.String(20), default='user', nullable=False) 
     
     # Relationships for user-generated content
-    # A user can post many items
     items = db.relationship('Item', backref='owner', lazy=True)
-    # A user can send many requests
     sent_requests = db.relationship('Request', foreign_keys='Request.requester_id', backref='requester', lazy=True)
-    # A user can receive many requests (for their items)
     received_requests = db.relationship('Request', foreign_keys='Request.item_owner_id', backref='item_owner', lazy=True)
-    # Removed sent_messages and received_messages relationships
-    
-    # A user can give many ratings
     ratings_given = db.relationship('Rating', foreign_keys='Rating.rater_id', backref='rater', lazy=True)
-    # A user can receive many ratings
     ratings_received = db.relationship('Rating', foreign_keys='Rating.rated_user_id', backref='rated_user', lazy=True)
 
 
-    def __init__(self, username, email, password, role='user'):
+    def __init__(self, username, email, password, role='user'): # Expects RAW password, hashes internally
         self.username = username
         self.email = email
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -42,10 +37,9 @@ class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(50), nullable=False) # e.g., 'Tools', 'Books', 'Services'
-    # For simplicity, store image paths. In a real app, use cloud storage (S3, GCS).
+    category = db.Column(db.String(50), nullable=False)
     image_url = db.Column(db.String(200), nullable=True) 
-    location = db.Column(db.String(100), nullable=True) # e.g., 'Downtown', 'Northside'
+    location = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     is_available = db.Column(db.Boolean, default=True)
     
@@ -70,8 +64,6 @@ class Request(db.Model):
     def __repr__(self):
         return f"Request('{self.requester.username}' to '{self.item_owner.username}' for '{self.item.title}', Status: '{self.status}')"
 
-# Removed the Message Model entirely
-
 # Rating Model: For user-to-user ratings.
 class Rating(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -83,3 +75,12 @@ class Rating(db.Model):
 
     def __repr__(self):
         return f"Rating by '{self.rater.username}' for '{self.rated_user.username}': {self.score}"
+
+# NEW: TokenBlacklist Model for JWT revocation
+class TokenBlacklist(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), nullable=False, unique=True) # JWT ID
+    expires = db.Column(db.DateTime, nullable=False) # When the token naturally expires
+
+    def __repr__(self):
+        return f"TokenBlacklist(jti='{self.jti}', expires='{self.expires}')"

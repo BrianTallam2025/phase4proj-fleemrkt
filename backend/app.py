@@ -1,96 +1,82 @@
+# backend/models.py
+# This file defines your database models using SQLAlchemy.
 
-from flask import Flask, request, jsonify # Keep flask.request here for API route handling
-from extensions import db, bcrypt # Import db and bcrypt from extensions.py
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from flask_cors import CORS
-from flask_migrate import Migrate
-from dotenv import load_dotenv
-import os
 from datetime import datetime
+from backend.extensions import db, bcrypt # <--- Changed: Import from backend.extensions
 
-# Load environment variables
-load_dotenv()
-
-app = Flask(__name__)
-app.config.from_object('config.Config')
-
-# Initialize extensions with the app instance
-db.init_app(app)
-bcrypt.init_app(app)
-jwt = JWTManager(app)
-CORS(app)
-migrate = Migrate(app, db)
-
-# Import models AFTER db, bcrypt, and app are fully initialized
-# This order is crucial.
-# models.py itself imports db and bcrypt from extensions, so no circular import here.
-from models import User, Item, Request, Rating
-
-# --- CORRECTED BLUEPRINT IMPORTS ---
-# Import the blueprint OBJECTS from their respective files
-# Ensure these match the actual blueprint variable names defined in each views file.
-from views.auth import auth_bp           # Assuming auth.py has 'auth_bp = Blueprint(...)'
-from views.item import item_bp           # Assuming item.py has 'item_bp = Blueprint(...)'
-from views.myrequest import request_bp   # <--- RENAMED to request_bp to avoid collision with flask.request
-from views.admin import admin_bp         # Assuming admin.py has 'admin_bp = Blueprint(...)'
-
-# Register Blueprints with the main app
-app.register_blueprint(auth_bp, url_prefix='/api')
-app.register_blueprint(item_bp, url_prefix='/api')
-app.register_blueprint(request_bp, url_prefix='/api') # <--- Use request_bp here
-app.register_blueprint(admin_bp, url_prefix='/api')
+# User Model: Represents a user in the system (regular or admin).
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(20), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(20), default='user', nullable=False) 
+    
+    # Relationships for user-generated content
+    items = db.relationship('Item', backref='owner', lazy=True)
+    sent_requests = db.relationship('Request', foreign_keys='Request.requester_id', backref='requester', lazy=True)
+    received_requests = db.relationship('Request', foreign_keys='Request.item_owner_id', backref='item_owner', lazy=True)
+    ratings_given = db.relationship('Rating', foreign_keys='Rating.rater_id', backref='rater', lazy=True)
+    ratings_received = db.relationship('Rating', foreign_keys='Rating.rated_user_id', backref='rated_user', lazy=True)
 
 
-# --- REMOVE ALL DIRECT @app.route(...) DEFINITIONS FROM HERE ---
-# All your API routes (register, login, protected, items, requests, admin)
-# should now live WITHIN their respective Blueprint files.
-# If you have duplicate route definitions here, they will conflict.
-# The code below this comment should ONLY contain error handlers and the main run block.
+    def __init__(self, username, email, password, role='user'): # Expects RAW password, hashes internally
+        self.username = username
+        self.email = email
+        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+        self.role = role
 
+    def check_password(self, password):
+        return bcrypt.check_password_hash(self.password_hash, password)
 
-# --- Error handling (these remain in app.py as they are global) ---
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"msg": "Resource not found"}), 404
+    def __repr__(self):
+        return f"User('{self.username}', '{self.email}', '{self.role}')"
 
-@app.errorhandler(500)
-def internal_server_error(error):
-    app.logger.error('Server Error: %s', (error))
-    return jsonify({"msg": "Internal server error"}), 500
+# Item Model: Remains the same
+class Item(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(50), nullable=False)
+    image_url = db.Column(db.String(200), nullable=True) 
+    location = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    is_available = db.Column(db.Boolean, default=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    requests = db.relationship('Request', backref='item', lazy=True)
 
-# Main block for running the Flask app.
-if __name__ == '__main__':
-    with app.app_context():
-        # This part ensures initial users are created AFTER the database schema
-        # has been set up via migrations (run 'flask db upgrade' separately).
-        # We put it here for development convenience, but in production,
-        # seeding might be a separate script or part of deployment.
-        
-        # models.py's User.__init__ now handles hashing, so pass raw password
-        if not User.query.filter_by(username='admin').first():
-            admin_user = User(
-                username='admin', 
-                email='admin@example.com', 
-                password='adminpassword', # Pass RAW password, models.py handles hashing
-                role='admin'
-            )
-            db.session.add(admin_user)
-            db.session.commit()
-            print("Admin user created: username='admin', password='adminpassword'")
-        else:
-            print("Admin user already exists.")
-        
-        if not User.query.filter_by(username='testuser').first():
-            test_user = User(
-                username='testuser', 
-                email='test@example.com', 
-                password='testpassword', # Pass RAW password, models.py handles hashing
-                role='user'
-            )
-            db.session.add(test_user)
-            db.session.commit()
-            print("Test user created: username='testuser', password='testpassword'")
-        else:
-            print("Test user already exists.")
+    def __repr__(self):
+        return f"Item('{self.title}', '{self.category}', '{self.owner.username}')"
 
-    app.run(debug=True, port=5000)
+# Request Model: Remains the same
+class Request(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('item.id'), nullable=False)
+    requester_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    item_owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending', nullable=False)
+    requested_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"Request('{self.requester.username}' to '{self.item_owner.username}' for '{self.item.title}', Status: '{self.status}')"
+
+# Rating Model: Remains the same
+class Rating(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    rater_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    rated_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+    comment = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"Rating by '{self.rater.username}' for '{self.rated_user.username}': {self.score}"
+
+# TokenBlacklist Model: Remains the same (already added)
+class TokenBlacklist(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), nullable=False, unique=True)
+    expires = db.Column(db.DateTime, nullable=False)
+
+    def __repr__(self):
+        return f"TokenBlacklist(jti='{self.jti}', expires='{self.expires}')"

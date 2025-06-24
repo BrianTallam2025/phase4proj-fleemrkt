@@ -1,16 +1,15 @@
+# backend/manage.py
+# This script is used to run Flask-Migrate commands and other custom CLI commands.
 
 import os
 from flask.cli import FlaskGroup
-from app import app, db # Import your app and db instances from app.py
-from models import User, Item, Request, Rating # Import all your models from models.py
+from backend.app import app, db # <--- Changed: Import from backend.app
+from backend.models import User, Item, Request, Rating, TokenBlacklist # <--- Changed: Import from backend.models
 from datetime import datetime
-from flask_bcrypt import Bcrypt # Import Bcrypt to hash passwords for initial users
+# Bcrypt is used in User.__init__, so no direct import needed here if User model is consistent.
 
-# Create a FlaskGroup instance to enable Flask CLI commands
-# This tells Flask-CLI to use 'app' as the Flask application.
 cli = FlaskGroup(app)
 
-# Custom command to create initial users (admin and testuser)
 @cli.command("create_initial_users")
 def create_initial_users():
     """
@@ -18,16 +17,12 @@ def create_initial_users():
     Run this AFTER `flask db upgrade`.
     """
     with app.app_context(): # Ensure we are in the Flask application context
-        # Bcrypt is initialized with the app instance, so we need to access it from app.
-        # This prevents circular imports if Bcrypt was initialized in models.py
-        app_bcrypt = Bcrypt(app) 
-
-        # Check for and create admin user
+        
         if not User.query.filter_by(username='admin').first():
             admin_user = User(
                 username='admin', 
                 email='admin@example.com', 
-                password_hash=app_bcrypt.generate_password_hash('adminpassword').decode('utf-8'), 
+                password='adminpassword', # Pass RAW password, User.__init__ handles hashing
                 role='admin'
             )
             db.session.add(admin_user)
@@ -36,12 +31,11 @@ def create_initial_users():
         else:
             print("Admin user already exists.")
         
-        # Check for and create test user
         if not User.query.filter_by(username='testuser').first():
             test_user = User(
                 username='testuser', 
                 email='test@example.com', 
-                password_hash=app_bcrypt.generate_password_hash('testpassword').decode('utf-8'), 
+                password='testpassword', # Pass RAW password, User.__init__ handles hashing
                 role='user'
             )
             db.session.add(test_user)
@@ -50,6 +44,5 @@ def create_initial_users():
         else:
             print("Test user already exists.")
 
-# This is the standard entry point for Flask-CLI commands
 if __name__ == '__main__':
     cli()
