@@ -2,7 +2,7 @@
 # This file defines your database models using SQLAlchemy.
 
 from datetime import datetime
-from extensions import db, bcrypt # Correctly importing from extensions
+from backend.extensions import db, bcrypt # Correctly importing from extensions
 
 # User Model: Represents a user in the system (regular or admin).
 class User(db.Model):

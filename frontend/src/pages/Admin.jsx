@@ -1,7 +1,8 @@
+// frontend/src/pages/Admin.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { getAllUsers, createAdminUser, adminGetAllRequests, adminDeleteRequest } from './api';
+import { useAuth } from '../context/AuthContext.jsx'; // Ensure .jsx here too if not already
+import { getAllUsers, createAdminUser, adminGetAllRequests, adminDeleteRequest } from '../api.js'; // <--- CRITICAL CHANGE: Changed from "./api" to "../api.js"
 
 function Admin() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -15,31 +16,37 @@ function Admin() {
   const [adminCreationError, setAdminCreationError] = useState('');
 
   useEffect(() => {
+    // Redirect if not authenticated or not an admin
     if (!isAuthenticated || user?.role !== 'admin') {
       alert('Access Denied: Admins only!');
-      navigate('/');
+      navigate('/'); // Redirect to home or login
       return;
     }
 
     const fetchData = async () => {
       try {
+        // Fetch all users
         const usersResponse = await getAllUsers();
         setUsers(usersResponse.data);
 
+        // Fetch all requests
         const requestsResponse = await adminGetAllRequests();
         setAllRequests(requestsResponse.data);
 
       } catch (err) {
         console.error("Error fetching admin data:", err);
-        alert(err.response?.data?.msg || "Failed to fetch admin data.");
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          logout();
+        // Better error handling for token expiration or forbidden access
+        if (err.response?.status === 401 || err.response?.status === 403) { // Unauthorized or Forbidden
+          alert('Session expired or access denied. Please login again.');
+          logout(); // Log out and clear token
           navigate('/login');
+        } else {
+          alert(err.response?.data?.msg || "Failed to fetch admin data.");
         }
       }
     };
     fetchData();
-  }, [isAuthenticated, user, navigate, logout]);
+  }, [isAuthenticated, user, navigate, logout]); // Dependencies for useEffect
 
   const handleCreateAdmin = async (e) => {
     e.preventDefault();
@@ -52,6 +59,7 @@ function Admin() {
         password: newAdminPassword,
       });
       setAdminCreationMessage(response.data.msg);
+      // Clear form and re-fetch users to update list
       setNewAdminUsername('');
       setNewAdminEmail('');
       setNewAdminPassword('');
@@ -70,6 +78,7 @@ function Admin() {
     try {
       await adminDeleteRequest(requestId);
       alert('Request deleted successfully!');
+      // Re-fetch all requests to update the list
       const updatedRequests = await adminGetAllRequests();
       setAllRequests(updatedRequests.data);
     } catch (err) {

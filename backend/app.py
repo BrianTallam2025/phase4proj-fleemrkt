@@ -1,82 +1,97 @@
-# backend/models.py
-# This file defines your database models using SQLAlchemy.
+# backend/app.py
+# CHANGES:
+# - Corrected Blueprint import name for auth_bp to explicitly match 'auth_bp'.
 
-from datetime import datetime
-from backend.extensions import db, bcrypt # <--- Changed: Import from backend.extensions
+from flask import Flask, request, jsonify
+from backend.extensions import db, bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
+from flask_cors import CORS
+from flask_migrate import Migrate
+from dotenv import load_dotenv
+import os
+from datetime import datetime, timezone, timedelta
 
-# User Model: Represents a user in the system (regular or admin).
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(20), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), default='user', nullable=False) 
-    
-    # Relationships for user-generated content
-    items = db.relationship('Item', backref='owner', lazy=True)
-    sent_requests = db.relationship('Request', foreign_keys='Request.requester_id', backref='requester', lazy=True)
-    received_requests = db.relationship('Request', foreign_keys='Request.item_owner_id', backref='item_owner', lazy=True)
-    ratings_given = db.relationship('Rating', foreign_keys='Rating.rater_id', backref='rater', lazy=True)
-    ratings_received = db.relationship('Rating', foreign_keys='Rating.rated_user_id', backref='rated_user', lazy=True)
+# Load environment variables
+load_dotenv()
 
+app = Flask(__name__)
+app.config.from_object('backend.config.Config')
 
-    def __init__(self, username, email, password, role='user'): # Expects RAW password, hashes internally
-        self.username = username
-        self.email = email
-        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
-        self.role = role
+# Initialize extensions with the app instance
+db.init_app(app)
+bcrypt.init_app(app)
+jwt = JWTManager(app)
+CORS(app)
+migrate = Migrate(app, db)
 
-    def check_password(self, password):
-        return bcrypt.check_password_hash(self.password_hash, password)
+# --- JWT Blacklist Configuration ---
+@jwt.token_in_blocklist_loader
+def check_if_token_revoked(jwt_header, jwt_payload: dict):
+    jti = jwt_payload["jti"]
+    from backend.models import TokenBlacklist 
+    token = db.session.query(TokenBlacklist.id).filter_by(jti=jti).scalar()
+    return token is not None
 
-    def __repr__(self):
-        return f"User('{self.username}', '{self.email}', '{self.role}')"
+# Import models AFTER db, bcrypt, and app are fully initialized
+from backend.models import User, Item, Request, Rating, TokenBlacklist
 
-# Item Model: Remains the same
-class Item(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(50), nullable=False)
-    image_url = db.Column(db.String(200), nullable=True) 
-    location = db.Column(db.String(100), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    is_available = db.Column(db.Boolean, default=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    requests = db.relationship('Request', backref='item', lazy=True)
+# --- Blueprint Imports ---
+# THIS IS THE CRITICAL CHANGE FOR AUTH: Ensure it's 'auth_bp'
+from backend.views.auth import auth_bp      # <--- THIS MUST BE 'auth_bp'
+from backend.views.item import item_bp           
+from backend.views.myrequest import request_bp   
+from backend.views.admin import admin_bp         
 
-    def __repr__(self):
-        return f"Item('{self.title}', '{self.category}', '{self.owner.username}')"
+# Register Blueprints with the main app
+app.register_blueprint(auth_bp, url_prefix='/api')
+app.register_blueprint(item_bp, url_prefix='/api')
+app.register_blueprint(request_bp, url_prefix='/api')
+app.register_blueprint(admin_bp, url_prefix='/api')
 
-# Request Model: Remains the same
-class Request(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.Integer, db.ForeignKey('item.id'), nullable=False)
-    requester_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    item_owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    status = db.Column(db.String(20), default='pending', nullable=False)
-    requested_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    
-    def __repr__(self):
-        return f"Request('{self.requester.username}' to '{self.item_owner.username}' for '{self.item.title}', Status: '{self.status}')"
+# --- NEW: Logout route to blacklist tokens ---
+@app.route('/api/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    jti = get_jwt()["jti"]
+    expires = datetime.fromtimestamp(get_jwt()["exp"], tz=timezone.utc)
+    blacklisted_token = TokenBlacklist(jti=jti, expires=expires)
+    db.session.add(blacklisted_token)
+    db.session.commit()
+    return jsonify({"msg": "Successfully logged out"}), 200
 
-# Rating Model: Remains the same
-class Rating(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    rater_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    rated_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    score = db.Column(db.Integer, nullable=False)
-    comment = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+# --- Error handling ---
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"msg": "Resource not found"}), 404
 
-    def __repr__(self):
-        return f"Rating by '{self.rater.username}' for '{self.rated_user.username}': {self.score}"
+@app.errorhandler(500)
+def internal_server_error(error):
+    app.logger.error('Server Error: %s', (error))
+    return jsonify({"msg": "Internal server error"}), 500
 
-# TokenBlacklist Model: Remains the same (already added)
-class TokenBlacklist(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    jti = db.Column(db.String(36), nullable=False, unique=True)
-    expires = db.Column(db.DateTime, nullable=False)
+# Main block for running the Flask app.
+if __name__ == '__main__':
+    with app.app_context():
+        if not User.query.filter_by(username='admin').first():
+            admin_user = User(
+                username='admin', 
+                email='admin@example.com', 
+                password='adminpassword',
+                role='admin'
+            )
+            db.session.add(admin_user)
+            db.session.commit()
+            print("Admin user created: username='admin', password='adminpassword'")
+        
+        if not User.query.filter_by(username='testuser').first():
+            test_user = User(
+                username='testuser', 
+                email='test@example.com', 
+                password='testpassword',
+                role='user'
+            )
+            db.session.add(test_user)
+            db.session.commit()
+            print("Test user created: username='testuser', password='testpassword'")
 
-    def __repr__(self):
-        return f"TokenBlacklist(jti='{self.jti}', expires='{self.expires}')"
+    app.run(debug=True, port=5000)

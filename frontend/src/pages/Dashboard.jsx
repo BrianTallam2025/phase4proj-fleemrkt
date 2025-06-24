@@ -1,22 +1,24 @@
+// frontend/src/pages/Dashboard.js
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { getProtectedData, createItem, getItems, createRequest, getSentRequests, getReceivedRequests, updateRequestStatus } from './api';
+import { getProtectedData, createItem, getItems, createRequest, getSentRequests, getReceivedRequests, updateRequestStatus } from '../api.js'; // <--- CRITICAL CHANGE: Changed from "./api" to "../api.js"
 
 function Dashboard() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(''); // For protected data test
   const [itemTitle, setItemTitle] = useState('');
   const [itemDescription, setItemDescription] = useState('');
   const [itemCategory, setItemCategory] = useState('');
   const [itemLocation, setItemLocation] = useState('');
-  const [itemImage, setItemImage] = useState('');
+  const [itemImage, setItemImage] = useState(''); // Just a URL for now
   const [items, setItems] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [receivedRequests, setReceivedRequests] = useState([]);
   const [formError, setFormError] = useState('');
 
+  // Fetch data on component mount and when authentication changes
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
@@ -25,15 +27,19 @@ function Dashboard() {
 
     const fetchData = async () => {
       try {
+        // Test Protected Route
         const resProtected = await getProtectedData();
         setMessage(resProtected.data.logged_in_as.username);
 
+        // Fetch Items
         const resItems = await getItems();
         setItems(resItems.data);
 
+        // Fetch Sent Requests
         const resSentRequests = await getSentRequests();
         setSentRequests(resSentRequests.data);
 
+        // Fetch Received Requests
         const resReceivedRequests = await getReceivedRequests();
         setReceivedRequests(resReceivedRequests.data);
 
@@ -41,13 +47,14 @@ function Dashboard() {
         console.error("Error fetching dashboard data:", err);
         setFormError(err.response?.data?.msg || "Failed to load data.");
         if (err.response?.status === 401 || err.response?.status === 403) {
-          logout();
+          logout(); // Log out if token is invalid or unauthorized
           navigate('/login');
         }
       }
     };
+
     fetchData();
-  }, [isAuthenticated, navigate, logout]);
+  }, [isAuthenticated, navigate, logout]); // Dependencies for useEffect
 
   const handleLogout = () => {
     logout();
@@ -67,11 +74,13 @@ function Dashboard() {
       };
       await createItem(newItem);
       alert('Item created successfully!');
+      // Clear form
       setItemTitle('');
       setItemDescription('');
       setItemCategory('');
       setItemLocation('');
       setItemImage('');
+      // Re-fetch items to update the list
       const res = await getItems();
       setItems(res.data);
     } catch (err) {
@@ -81,12 +90,14 @@ function Dashboard() {
   };
 
   const handleRequestItem = async (itemId, itemOwnerUsername) => {
+    // Optional: Add a confirmation dialog here
     if (!window.confirm(`Are you sure you want to request "${items.find(item => item.id === itemId)?.title}" from ${itemOwnerUsername}?`)) {
       return;
     }
     try {
       await createRequest(itemId);
       alert('Request sent successfully!');
+      // Re-fetch sent requests to update the list
       const resSentRequests = await getSentRequests();
       setSentRequests(resSentRequests.data);
     } catch (err) {
@@ -97,14 +108,18 @@ function Dashboard() {
   };
 
   const handleUpdateRequestStatus = async (requestId, status) => {
+    // Optional: Add a confirmation dialog
     if (!window.confirm(`Are you sure you want to ${status} this request?`)) {
       return;
     }
     try {
       await updateRequestStatus(requestId, status);
       alert(`Request ${status} successfully!`);
+      // Re-fetch received requests to update the list
       const resReceivedRequests = await getReceivedRequests();
       setReceivedRequests(resReceivedRequests.data);
+      // Optional: If item is accepted, you might want to mark it unavailable
+      // This would require another API call to update the item's is_available status.
     } catch (err) {
       const errorMessage = err.response?.data?.msg || 'Failed to update request status.';
       alert(`Error: ${errorMessage}`);
@@ -113,7 +128,7 @@ function Dashboard() {
   };
 
   if (!isAuthenticated) {
-    return null;
+    return null; // AuthContext already handles loading/redirection
   }
 
   return (
@@ -132,6 +147,7 @@ function Dashboard() {
       </header>
 
       <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Post New Item Section */}
         <section className="md:col-span-1 card h-fit">
           <h2 className="text-xl font-semibold mb-4">Post a New Item</h2>
           <form onSubmit={handleCreateItem} className="space-y-4">
@@ -195,6 +211,7 @@ function Dashboard() {
           </form>
         </section>
 
+        {/* Available Items Section */}
         <section className="md:col-span-2 card">
           <h2 className="text-xl font-semibold mb-4">Available Items</h2>
           {items.length === 0 ? (
@@ -216,7 +233,7 @@ function Dashboard() {
                   <p className="text-xs text-gray-500 mt-1">Category: {item.category}</p>
                   {item.location && <p className="text-xs text-gray-500">Location: {item.location}</p>}
                   <p className="text-xs text-gray-500">Posted by: {item.owner_username}</p>
-                  {user.id !== item.user_id ? (
+                  {user.id !== item.user_id ? ( // Don't show request button for own items
                     <button
                       onClick={() => handleRequestItem(item.id, item.owner_username)}
                       className="btn btn-primary btn-sm mt-3"
@@ -234,6 +251,7 @@ function Dashboard() {
       </main>
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        {/* Sent Requests Section */}
         <div className="card">
           <h2 className="text-xl font-semibold mb-4">Your Sent Requests</h2>
           {sentRequests.length === 0 ? (
@@ -252,6 +270,7 @@ function Dashboard() {
           )}
         </div>
 
+        {/* Received Requests Section */}
         <div className="card">
           <h2 className="text-xl font-semibold mb-4">Requests for Your Items</h2>
           {receivedRequests.length === 0 ? (

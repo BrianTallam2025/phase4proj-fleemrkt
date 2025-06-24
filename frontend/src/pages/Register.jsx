@@ -1,7 +1,7 @@
-// --- 7. frontend/src/pages/Register.jsx ---
+// frontend/src/pages/Register.js
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { registerUser } from './api';
+import { registerUser } from '../api'; // <--- CRITICAL CHANGE: Changed from "./api" to "../api"
 
 function Register() {
   const [username, setUsername] = useState('');
@@ -18,6 +18,7 @@ function Register() {
     try {
       const response = await registerUser({ username, email, password });
       setMessage(response.data.msg);
+      // Optionally, auto-login or redirect to login after successful registration
       alert('Registration successful! Please log in.');
       navigate('/login');
     } catch (err) {

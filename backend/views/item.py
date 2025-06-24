@@ -1,12 +1,12 @@
 # backend/views/item.py
+# Corrected imports to use absolute paths within the 'backend' package.
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from extensions import db # Import from extensions
-from models import Item, User # Import models
-from datetime import datetime
+from backend.extensions import db # <--- Changed: Correct import for db
+from backend.models import Item, User # <--- Changed: Correct import for Item, User
 
-# Define the Blueprint for item management
-item_bp = Blueprint('item', __name__) # <--- Blueprint variable named 'item_bp'
+item_bp = Blueprint('item', __name__)
 
 @item_bp.route('/items', methods=['POST'])
 @jwt_required()
@@ -18,39 +18,43 @@ def create_item():
     title = data.get('title')
     description = data.get('description')
     category = data.get('category')
-    location = data.get('location')
     image_url = data.get('image_url')
+    location = data.get('location')
 
     if not title or not description or not category:
-        return jsonify({"msg": "Missing title, description, or category"}), 400
+        return jsonify({"msg": "Missing required item fields"}), 400
 
     new_item = Item(
         title=title,
         description=description,
         category=category,
-        location=location,
         image_url=image_url,
+        location=location,
         user_id=user_id
     )
     db.session.add(new_item)
     db.session.commit()
+
     return jsonify({"msg": "Item created successfully", "item_id": new_item.id}), 201
 
 @item_bp.route('/items', methods=['GET'])
 def get_items():
-    items = Item.query.filter_by(is_available=True).all()
-    item_list = []
+    items = Item.query.all()
+    output = []
     for item in items:
-        owner_username = User.query.get(item.user_id).username if item.user_id else "Unknown"
-        item_list.append({
+        owner = User.query.get(item.user_id) # Get the owner to display username
+        output.append({
             "id": item.id,
             "title": item.title,
             "description": item.description,
             "category": item.category,
             "image_url": item.image_url,
             "location": item.location,
+            "created_at": item.created_at.isoformat(),
             "is_available": item.is_available,
-            "owner_username": owner_username,
-            "created_at": item.created_at.isoformat()
+            "user_id": item.user_id,
+            "owner_username": owner.username if owner else "Unknown"
         })
-    return jsonify(item_list), 200
+    return jsonify(output), 200
+
+# Add other item-related routes here (e.g., PUT/PATCH for update, DELETE)
