@@ -1,11 +1,13 @@
 # backend/app.py
 # CHANGES:
 # - Corrected Blueprint import name for auth_bp to explicitly match 'auth_bp'.
+# - **CRUCIAL CHANGE:** Updated CORS configuration to explicitly allow
+#   your Vercel frontend domain and enable credential support.
 
 from flask import Flask, request, jsonify
 from backend.extensions import db, bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
-from flask_cors import CORS
+from flask_cors import CORS # Keep this import
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 import os
@@ -21,7 +23,17 @@ app.config.from_object('backend.config.Config')
 db.init_app(app)
 bcrypt.init_app(app)
 jwt = JWTManager(app)
-CORS(app)
+
+# --- CRUCIAL CORS Configuration ---
+# You MUST specify the exact origins that are allowed to access your API.
+# 'https://phase4proj-fleemrkt.vercel.app' is your deployed Vercel frontend.
+# 'http://localhost:5173' is for your local React development.
+# supports_credentials=True is necessary for passing cookies/authorization headers.
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:5173",
+    "https://phase4proj-fleemrkt.vercel.app"
+]}}, supports_credentials=True)
+
 migrate = Migrate(app, db)
 
 # --- JWT Blacklist Configuration ---
@@ -37,7 +49,7 @@ from backend.models import User, Item, Request, Rating, TokenBlacklist
 
 # --- Blueprint Imports ---
 # THIS IS THE CRITICAL CHANGE FOR AUTH: Ensure it's 'auth_bp'
-from backend.views.auth import auth_bp      # <--- THIS MUST BE 'auth_bp'
+from backend.views.auth import auth_bp           # <--- THIS MUST BE 'auth_bp'
 from backend.views.item import item_bp           
 from backend.views.myrequest import request_bp   
 from backend.views.admin import admin_bp         
@@ -69,14 +81,20 @@ def internal_server_error(error):
     app.logger.error('Server Error: %s', (error))
     return jsonify({"msg": "Internal server error"}), 500
 
-# Main block for running the Flask app.
+# Main block for running the Flask app locally.
+# IMPORTANT: On Render, Gunicorn typically runs your app using `create_app()` or by
+# referencing the 'app' object directly, so this block is primarily for local testing.
 if __name__ == '__main__':
     with app.app_context():
+        # Ensure the database tables are created if running locally for the first time
+        # This is typically handled by Flask-Migrate in production, but useful for initial local setup
+        # db.create_all() # Uncomment if you need to create tables directly without migrations
+
         if not User.query.filter_by(username='admin').first():
             admin_user = User(
                 username='admin', 
                 email='admin@example.com', 
-                password='adminpassword',
+                password='adminpassword', # Consider hashing this if not using a setter in User model
                 role='admin'
             )
             db.session.add(admin_user)
@@ -87,11 +105,14 @@ if __name__ == '__main__':
             test_user = User(
                 username='testuser', 
                 email='test@example.com', 
-                password='testpassword',
+                password='testpassword', # Consider hashing this
                 role='user'
             )
             db.session.add(test_user)
             db.session.commit()
             print("Test user created: username='testuser', password='testpassword'")
 
+    # This line runs the Flask development server.
+    # It will not be used when deployed on Render via Gunicorn.
     app.run(debug=True, port=5000)
+
