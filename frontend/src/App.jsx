@@ -1,15 +1,17 @@
 // frontend/src/App.jsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from "./context/AuthContext.jsx"; // <-- Critical: Must have .jsx
-import Home from './pages/Home.jsx'; // Critical: Must have .jsx
-import Login from './pages/Login.jsx'; // Critical: Must have .jsx
-import Register from './pages/Register.jsx'; // Critical: Must have .jsx
-import Dashboard from './pages/Dashboard.jsx'; // Critical: Must have .jsx
-import Admin from './pages/Admin.jsx'; // Critical: Must have .jsx
+import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import Home from './pages/Home.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import Admin from './pages/Admin.jsx';
 import './index.css';
 
 // PrivateRoute component to protect routes
+// This component also uses useAuth, so it needs to be inside AuthProvider,
+// which in turn needs to be inside Router.
 const PrivateRoute = ({ children, allowedRoles }) => {
   const { isAuthenticated, loading, user } = useAuth();
 
@@ -31,8 +33,9 @@ const PrivateRoute = ({ children, allowedRoles }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
+    // CRITICAL CHANGE: AuthProvider must be inside Router
+    <Router>
+      <AuthProvider> {/* <-- MOVED AuthProvider INSIDE Router */}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
@@ -57,8 +60,8 @@ function App() {
 
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
-      </Router>
-    </AuthProvider>
+      </AuthProvider> {/* <-- CLOSING TAG MOVED */}
+    </Router>
   );
 }
 
