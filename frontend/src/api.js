@@ -5,7 +5,7 @@ import axios from 'axios';
 // Dynamically set the base URL based on the environment.
 // In development, it falls back to 'http://localhost:5000/api'.
 // In production (e.g., on Render), you will set VITE_API_BASE_URL as an environment variable.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://phase4proj-fleemrkt.onrender.com/api';
 
 // Create an Axios instance with the dynamic base URL for your Flask API
 const api = axios.create({
