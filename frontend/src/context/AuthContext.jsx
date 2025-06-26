@@ -1,8 +1,10 @@
 // frontend/src/context/AuthContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logoutUser } from '../api.js'; // Critical: Must have .js
-import axios from 'axios';
+// CRITICAL CHANGE: Import the 'api' instance directly from api.js
+import api, { logoutUser } from '../api.js'; 
+// No longer need to import axios directly if all calls go through 'api' instance
+// import axios from 'axios'; 
 
 const AuthContext = createContext(null);
 
@@ -39,7 +41,8 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      const response = await axios.post('https://phase4proj-fleemrkt.onrender.com/api/login', credentials);
+      // CRITICAL CHANGE: Use the 'api' instance for login as well
+      const response = await api.post('/login', credentials); 
       const { access_token, user_id, username, role } = response.data;
 
       localStorage.setItem('token', access_token);
