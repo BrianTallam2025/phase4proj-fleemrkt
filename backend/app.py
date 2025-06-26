@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from backend.extensions import db, migrate
+from backend.extensions import db, migrate, bcrypt
 from backend.config import Config
 import logging
 
@@ -13,6 +13,7 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt = JWTManager(app)
+    bcrypt.init_app(app)
 
     # Configure CORS
     CORS(app, resources={
