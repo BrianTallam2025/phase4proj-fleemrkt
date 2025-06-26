@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  loginUser, 
-  logoutUser, 
+import {
+  loginUser,
+  logoutUser,
   getCurrentUser,
   refreshToken
-} from '../api';
+} from '../api'; // Now properly imported
 
 const AuthContext = createContext();
 
@@ -16,98 +16,52 @@ export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Initialize auth state
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         const token = localStorage.getItem('token');
         if (token) {
-          // Verify token validity
-          const response = await getCurrentUser();
-          setUser(response.data);
+          const userData = await getCurrentUser(); // Now works
+          setUser(userData.data);
           setIsAuthenticated(true);
         }
       } catch (error) {
-        console.error('Auth initialization error:', error);
-        await handleLogout();
+        console.error('Auth init error:', error);
+        localStorage.removeItem('token');
       } finally {
         setLoading(false);
       }
     };
-
     initializeAuth();
   }, []);
 
-  // Handle login
-  const handleLogin = async (credentials) => {
+  const login = async (credentials) => {
     try {
       const response = await loginUser(credentials);
-      const { access_token, user } = response.data;
-
-      localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
-      
-      setUser(user);
-      setIsAuthenticated(true);
-
-      // Redirect to intended path or dashboard
-      const redirectTo = location.state?.from?.pathname || '/dashboard';
-      navigate(redirectTo);
-
-      return true;
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
-  };
-
-  // Handle logout
-  const handleLogout = async () => {
-    try {
-      await logoutUser();
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      setUser(null);
-      setIsAuthenticated(false);
-      navigate('/login');
-    }
-  };
-
-  // Refresh token
-  const handleRefreshToken = async () => {
-    try {
-      const response = await refreshToken();
       localStorage.setItem('token', response.data.access_token);
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+      navigate(location.state?.from?.pathname || '/dashboard');
       return true;
     } catch (error) {
-      await handleLogout();
+      console.error('Login failed:', error);
       return false;
     }
   };
 
+  const logout = async () => {
+    await logoutUser();
+    localStorage.removeItem('token');
+    setUser(null);
+    setIsAuthenticated(false);
+    navigate('/login');
+  };
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        loading,
-        login: handleLogin,
-        logout: handleLogout,
-        refreshToken: handleRefreshToken
-      }}
-    >
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
