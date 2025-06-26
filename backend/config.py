@@ -8,7 +8,7 @@ load_dotenv()
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'a_very_secret_key_that_should_be_changed'
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'bab4bdd235864a4eaed6c1a64794d3fe'
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or '250426d50f8846a7a79f32fdb5248c8f251ee0fb09edcdbf'
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
                               'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'app.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
