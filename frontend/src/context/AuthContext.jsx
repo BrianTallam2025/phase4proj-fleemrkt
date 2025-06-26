@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/login', credentials);
+      const response = await axios.post('https://phase4proj-fleemrkt.onrender.com/api/login', credentials);
       const { access_token, user_id, username, role } = response.data;
 
       localStorage.setItem('token', access_token);
