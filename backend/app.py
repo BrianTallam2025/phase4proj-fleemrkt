@@ -62,7 +62,7 @@ def create_app(config_name=None):
 
     # Import models so Flask-Migrate can detect them.
     # --- CRITICAL CHANGE HERE: Use fully qualified imports for models ---
-    from backend.models import User, Item, Request, TokenBlocklist
+    from backend.models import User, Item, Request, TokenBlacklist
 
     # JWT Error Handlers (rest of your code for JWT handlers)
     @jwt.unauthorized_loader
@@ -80,7 +80,7 @@ def create_app(config_name=None):
     @jwt.token_verification_loader
     def verify_token_callback(jwt_header, jwt_payload):
         jti = jwt_payload['jti']
-        is_blacklisted = TokenBlocklist.query.filter_by(jti=jti).first()
+        is_blacklisted = TokenBlacklist.query.filter_by(jti=jti).first()
         return is_blacklisted is None
 
     # Basic root route for health check or welcome message
