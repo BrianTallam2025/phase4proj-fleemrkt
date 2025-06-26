@@ -1,65 +1,72 @@
-// frontend/src/api.js
-// This file sets up an Axios instance for making API requests.
-// It dynamically determines the backend URL based on environment variables,
-// and automatically attaches the JWT token for authenticated requests.
-
 import axios from 'axios';
+import { handleAPIError } from './utils/errorHandler';
 
-// Dynamically set the base URL for API requests.
-// During local development, it will fall back to 'http://localhost:5000/api'.
-// In production (e.g., on Vercel), `import.meta.env.VITE_API_BASE_URL` will be
-// read from the environment variable configured on Vercel (e.g.,
-// https://your-backend-name.onrender.com/api).
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-
-// Create an Axios instance with the determined base URL.
 const api = axios.create({
-    baseURL: API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://phase4proj-fleemrkt.onrender.com/api',
+  withCredentials: true,
+  timeout: 20000, // 20 seconds timeout for Render's free tier
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest'
+  }
 });
 
-// Add a request interceptor to include the JWT token in every outgoing request.
-// This ensures that authenticated routes on the backend receive the necessary token.
-api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem('token'); // Retrieve token from local storage
-        if (token) {
-            // If a token exists, add it to the Authorization header as a Bearer token.
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config; // Return the modified configuration
-    },
-    (error) => {
-        // Handle any errors that occur before the request is sent.
-        return Promise.reject(error);
+// Request interceptor
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, error => Promise.reject(error));
+
+// Response interceptor
+api.interceptors.response.use(
+  response => {
+    // Store new tokens if present in response
+    if (response.data?.access_token) {
+      localStorage.setItem('token', response.data.access_token);
     }
+    return response;
+  },
+  async error => {
+    const originalRequest = error.config;
+    
+    // Handle token expiration/validation errors
+    if ((error.response?.status === 401 || error.response?.status === 422) && 
+        !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        const { data } = await api.post('/refresh-token');
+        localStorage.setItem('token', data.access_token);
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        localStorage.removeItem('token');
+        window.location.href = '/login?session=expired';
+        return Promise.reject(refreshError);
+      }
+    }
+    
+    return Promise.reject(handleAPIError(error));
+  }
 );
 
-// --- Exported API functions for various endpoints ---
-// These functions use the 'api' Axios instance, so they automatically
-// use the correct base URL and include the JWT token.
+export const authAPI = {
+  login: credentials => api.post('/login', credentials),
+  logout: () => api.post('/logout'),
+  register: userData => api.post('/register', userData),
+  refreshToken: () => api.post('/refresh-token'),
+  getCurrentUser: () => api.get('/users/me')
+};
 
-// User Authentication Endpoints (from auth blueprint)
-export const registerUser = (userData) => api.post('/register', userData);
-export const loginUser = (credentials) => api.post('/login', credentials);
-export const getProtectedData = () => api.get('/protected');
-export const logoutUser = () => api.post('/logout'); // Note: This calls the backend logout endpoint
+export const itemsAPI = {
+  getAllItems: params => api.get('/items', { params }),
+  createItem: itemData => api.post('/items', itemData),
+  updateItem: (id, itemData) => api.patch(`/items/${id}`, itemData),
+  deleteItem: id => api.delete(`/items/${id}`)
+};
 
-// Item Endpoints (from item blueprint)
-export const createItem = (itemData) => api.post('/items', itemData);
-export const getItems = () => api.get('/items');
-export const getItemById = (id) => api.get(`/items/${id}`); // Example: If you have a get by ID route
-
-// Request Endpoints (from request blueprint)
-export const createRequest = (item_id) => api.post('/requests', { item_id });
-export const getSentRequests = () => api.get('/requests/sent');
-export const getReceivedRequests = () => api.get('/requests/received');
-export const updateRequestStatus = (request_id, status) => api.put(`/requests/${request_id}/status`, { status });
-
-// Admin Endpoints (from admin blueprint)
-export const getAllUsers = () => api.get('/admin/users');
-export const createAdminUser = (userData) => api.post('/admin/create_admin_user', userData);
-export const adminGetAllRequests = () => api.get('/admin/requests');
-export const adminDeleteRequest = (request_id) => api.delete(`/admin/requests/${request_id}`);
-
-// Export the configured Axios instance as default for direct use if needed.
 export default api;
