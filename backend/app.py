@@ -1,126 +1,115 @@
 # backend/app.py
-# CHANGES:
-# - Corrected Blueprint import name for auth_bp to explicitly match 'auth_bp'.
-# - **CRUCIAL CHANGE:** Updated CORS configuration to explicitly allow
-#   your Vercel frontend domain and enable credential support.
+# This is the main application file for the Flea Market backend.
+# It initializes the Flask app, database, migrations, JWT, CORS,
+# and registers all the API blueprints.
 
-from flask import Flask, request, jsonify
-from backend.extensions import db, bcrypt
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
-from flask_cors import CORS # Keep this import
-from flask_migrate import Migrate
-from dotenv import load_dotenv
 import os
-from datetime import datetime, timezone, timedelta
+from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_jwt_extended import JWTManager, verify_jwt_in_request, get_jwt_identity
+from flask_cors import CORS
+from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env file.
+# This ensures that variables like DATABASE_URL, SECRET_KEY, JWT_SECRET_KEY,
+# and FRONTEND_URL are available to the application.
 load_dotenv()
 
-app = Flask(__name__)
-app.config.from_object('backend.config.Config')
+# Initialize SQLAlchemy and Migrate without binding them to an app yet.
+# This allows us to create them globally and then initialize them with app
+# later in the create_app function, which is good practice for testing and
+# factory patterns.
+db = SQLAlchemy()
+migrate = Migrate()
+jwt = JWTManager()
 
-# Initialize extensions with the app instance
-db.init_app(app)
-bcrypt.init_app(app)
-jwt = JWTManager(app)
+def create_app(config_name=None):
+    """
+    Creates and configures the Flask application.
 
-# --- CRUCIAL CORS Configuration ---
-# You MUST specify the exact origins that are allowed to access your API.
-# 'https://phase4proj-fleemrkt.vercel.app' is your deployed Vercel frontend.
-# 'http://localhost:5173' is for your local React development.
-# supports_credentials=True is necessary for passing cookies/authorization headers.
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://your-frontend.vercel.app",
-            "https://phase4proj-fleemrkt.onrender.com",
-            "http://localhost:5173"  # For local testing
-        ],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True  # ← MUST BE TRUE
-    }
-})
+    Args:
+        config_name (str, optional): The name of the configuration to use
+                                     (e.g., 'development', 'production').
+                                     If None, it tries to get from FLASK_ENV
+                                     or defaults to 'development'.
+    Returns:
+        Flask: The configured Flask application instance.
+    """
+    app = Flask(__name__)
 
-migrate = Migrate(app, db)
+    # Determine which configuration to load.
+    # It checks the FLASK_ENV environment variable, otherwise defaults to 'development'.
+    if config_name is None:
+        config_name = os.getenv('FLASK_ENV', 'development')
 
-# --- JWT Blacklist Configuration ---
-@jwt.token_in_blocklist_loader
-def check_if_token_revoked(jwt_header, jwt_payload: dict):
-    jti = jwt_payload["jti"]
-    from backend.models import TokenBlacklist 
-    token = db.session.query(TokenBlacklist.id).filter_by(jti=jti).scalar()
-    return token is not None
+    # Import configuration from the config.py file.
+    # This loads settings like DATABASE_URL, SECRET_KEY, JWT_SECRET_KEY, etc.
+    from config import config_by_name
+    app.config.from_object(config_by_name[config_name])
 
-# Import models AFTER db, bcrypt, and app are fully initialized
-from backend.models import User, Item, Request, Rating, TokenBlacklist
+    # Initialize extensions with the Flask app instance.
+    db.init_app(app)
+    migrate.init_app(app, db)
+    jwt.init_app(app)
 
-# --- Blueprint Imports ---
-# THIS IS THE CRITICAL CHANGE FOR AUTH: Ensure it's 'auth_bp'
-from backend.views.auth import auth_bp           # <--- THIS MUST BE 'auth_bp'
-from backend.views.item import item_bp           
-from backend.views.myrequest import request_bp   
-from backend.views.admin import admin_bp         
+    # Configure CORS to allow requests from the specified frontend URL.
+    # This is crucial for allowing your React frontend to communicate with Flask.
+    CORS(app, resources={r"/api/*": {"origins": app.config['FRONTEND_URL']}})
 
-# Register Blueprints with the main app
-app.register_blueprint(auth_bp, url_prefix='/api')
-app.register_blueprint(item_bp, url_prefix='/api')
-app.register_blueprint(request_bp, url_prefix='/api')
-app.register_blueprint(admin_bp, url_prefix='/api')
+    # Import and register blueprints for API routes.
+    # Blueprints modularize the application, making it scalable and organized.
+    from backend.views.auth import auth_bp           # <--- THIS MUST BE 'auth_bp'
+    from backend.views.item import item_bp           
+    from backend.views.myrequest import request_bp   
+    from backend.views.admin import admin_bp         
 
-# --- NEW: Logout route to blacklist tokens ---
-@app.route('/api/logout', methods=['POST'])
-@jwt_required()
-def logout():
-    jti = get_jwt()["jti"]
-    expires = datetime.fromtimestamp(get_jwt()["exp"], tz=timezone.utc)
-    blacklisted_token = TokenBlacklist(jti=jti, expires=expires)
-    db.session.add(blacklisted_token)
-    db.session.commit()
-    return jsonify({"msg": "Successfully logged out"}), 200
 
-# --- Error handling ---
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"msg": "Resource not found"}), 404
+    app.register_blueprint(auth_bp, url_prefix='/api')
+    app.register_blueprint(item_bp, url_prefix='/api')
+    app.register_blueprint(request_bp, url_prefix='/api')
+    app.register_blueprint(admin_bp, url_prefix='/api/admin') # Admin routes usually have a distinct prefix
 
-@app.errorhandler(500)
-def internal_server_error(error):
-    app.logger.error('Server Error: %s', (error))
-    return jsonify({"msg": "Internal server error"}), 500
+    # Import models so Flask-Migrate can detect them.
+    # This is important for database migrations.
+    from models import User, Item, Request, TokenBlocklist
 
-# Main block for running the Flask app locally.
-# IMPORTANT: On Render, Gunicorn typically runs your app using `create_app()` or by
-# referencing the 'app' object directly, so this block is primarily for local testing.
+    # JWT Error Handlers
+    # These functions define how the application responds to JWT-related errors.
+
+    @jwt.unauthorized_loader
+    def unauthorized_response(callback):
+        """Handler for missing JWT (401 Unauthorized)."""
+        return jsonify({"msg": "Missing Authorization Header"}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_response(callback):
+        """Handler for invalid JWT (422 Unprocessable Entity, often for malformed tokens)."""
+        return jsonify({"msg": "Signature verification failed"}), 422
+
+    @jwt.expired_token_loader
+    def expired_token_response(callback):
+        """Handler for expired JWT (401 Unauthorized)."""
+        return jsonify({"msg": "Token has expired"}), 401
+    
+    @jwt.token_verification_loader
+    def verify_token_callback(jwt_header, jwt_payload):
+        """
+        Custom token verification loader to check if the token is blacklisted.
+        This function is called automatically by Flask-JWT-Extended during verification.
+        """
+        jti = jwt_payload['jti'] # Get the unique JWT ID
+        is_blacklisted = TokenBlocklist.query.filter_by(jti=jti).first()
+        return is_blacklisted is None # Return True if not blacklisted, False otherwise
+
+    # Basic root route for health check or welcome message
+    @app.route('/')
+    def index():
+        return jsonify({"message": "Flea Market API is running!"})
+
+    return app
+
+# When running app.py directly, create the app instance.
 if __name__ == '__main__':
-    with app.app_context():
-        # Ensure the database tables are created if running locally for the first time
-        # This is typically handled by Flask-Migrate in production, but useful for initial local setup
-        # db.create_all() # Uncomment if you need to create tables directly without migrations
-
-        if not User.query.filter_by(username='admin').first():
-            admin_user = User(
-                username='admin', 
-                email='admin@example.com', 
-                password='adminpassword', # Consider hashing this if not using a setter in User model
-                role='admin'
-            )
-            db.session.add(admin_user)
-            db.session.commit()
-            print("Admin user created: username='admin', password='adminpassword'")
-        
-        if not User.query.filter_by(username='testuser').first():
-            test_user = User(
-                username='testuser', 
-                email='test@example.com', 
-                password='testpassword', # Consider hashing this
-                role='user'
-            )
-            db.session.add(test_user)
-            db.session.commit()
-            print("Test user created: username='testuser', password='testpassword'")
-
-    # This line runs the Flask development server.
-    # It will not be used when deployed on Render via Gunicorn.
-    app.run(debug=True, port=5000)
-
+    app = create_app()
+    app.run(debug=True) # Run in debug mode for development
