@@ -64,12 +64,22 @@ def create_app(config_name=None):
     migrate.init_app(app, db)
     jwt.init_app(app) # Bind JWTManager to the app
 
-    # Configure CORS to allow requests from the specified frontend URL(s).
-    # The FRONTEND_URL environment variable on Render should be a comma-separated
-    # list of origins if you have multiple (e.g., main Vercel + preview Vercel).
-    # This line parses that comma-separated string into a list of allowed origins.
-    allowed_origins = [url.strip() for url in app.config['FRONTEND_URL'].split(',')]
+    # --- CRITICAL TEMPORARY CORS FIX: Hardcode the origins ---
+    # !!! IMPORTANT: THIS IS FOR DEBUGGING ONLY. DO NOT DEPLOY TO PRODUCTION LIKE THIS !!!
+    # This bypasses the environment variable parsing, ensuring CORS works if that was the issue.
+    # Replace these with YOUR EXACT Vercel URLs and localhost.
+    allowed_origins = [
+        "http://localhost:5173", # Your local frontend development server
+        "https://phase4proj-fleemrkt.vercel.app", # Your main Vercel production URL
+        "https://phase4proj-fleemrkt-h2vbaatflt-tallams-projects.vercel.app", # The specific preview URL you last saw
+        # You may need to add other Vercel preview URLs here if they change (e.g., for different branches)
+    ]
+    # Set the CORS configuration with the hardcoded origins.
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+    # !!! REMEMBER TO REVERT THIS BACK TO using app.config['FRONTEND_URL'] LATER !!!
+    # REVERT TO: allowed_origins = [url.strip() for url in app.config['FRONTEND_URL'].split(',')]
+    # REVERT TO: CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+
 
     # Register blueprints with their respective URL prefixes.
     # This organizes API routes into modular components.
