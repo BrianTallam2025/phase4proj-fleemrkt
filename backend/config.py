@@ -20,3 +20,7 @@ class Config:
 
     # Set to False in production for better performance and security
     DEBUG = os.environ.get('FLASK_DEBUG') == '1'
+    JWT_COOKIE_SECURE = True  # Only send cookies over HTTPS
+    JWT_COOKIE_SAMESITE = "None"  # Required for cross-domain
+    JWT_COOKIE_DOMAIN = ".onrender.com"  # Note the leading dot
+    PROPAGATE_EXCEPTIONS = True  # Better error messages

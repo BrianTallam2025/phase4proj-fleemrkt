@@ -29,11 +29,18 @@ jwt = JWTManager(app)
 # 'https://phase4proj-fleemrkt.vercel.app' is your deployed Vercel frontend.
 # 'http://localhost:5173' is for your local React development.
 # supports_credentials=True is necessary for passing cookies/authorization headers.
-CORS(app, resources={r"/api/*": {"origins": [
-    "http://localhost:5173",
-    "https://phase4proj-fleemrkt.vercel.app"
-    "https://phase4proj-fleemrkt-dfhzgeqxl-tallams-projects.vercel.app"
-]}}, supports_credentials=True)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "https://your-frontend.vercel.app",
+            "https://phase4proj-fleemrkt.onrender.com",
+            "http://localhost:5173"  # For local testing
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True  # ← MUST BE TRUE
+    }
+})
 
 migrate = Migrate(app, db)
 

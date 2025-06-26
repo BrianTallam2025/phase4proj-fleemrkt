@@ -1,54 +1,227 @@
-// frontend/src/api.js
-// This file centralizes all API calls to your Flask backend using Axios.
 import axios from 'axios';
 
-// Dynamically set the base URL based on the environment.
-// In development, it falls back to 'http://localhost:5000/api'.
-// In production (e.g., on Render), you will set VITE_API_BASE_URL as an environment variable.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://phase4proj-fleemrkt.onrender.com/api';
-
-// Create an Axios instance with the dynamic base URL for your Flask API
+// Configure the base API client with enhanced defaults
 const api = axios.create({
-    baseURL: API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://phase4proj-fleemrkt.onrender.com/api',
+  withCredentials: true, // Essential for cookie-based auth
+  timeout: 15000, // Increased timeout for Render's free tier
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest'
+  }
 });
 
-// Add a request interceptor to include the JWT token in every request
-// if it exists in localStorage.
+// Enhanced request interceptor
 api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => {
-        return Promise.reject(error);
+  (config) => {
+    // Automatically add auth token if available
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Add CSRF protection if using sessions
+    const csrfToken = getCookie('csrf_token');
+    if (csrfToken) {
+      config.headers['X-CSRF-TOKEN'] = csrfToken;
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
-// --- User Authentication Endpoints (from user_auth_bp) ---
-export const registerUser = (userData) => api.post('/register', userData);
-export const loginUser = (credentials) => api.post('/login', credentials);
-export const getProtectedData = () => api.get('/protected');
-export const logoutUser = () => api.post('/logout');
+// Comprehensive response interceptor
+api.interceptors.response.use(
+  (response) => {
+    // Store new tokens if they're returned
+    if (response.data?.access_token) {
+      localStorage.setItem('token', response.data.access_token);
+    }
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Handle token expiration (401)
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        // Attempt to refresh token
+        const refreshResponse = await api.post('/refresh-token');
+        const newToken = refreshResponse.data.access_token;
+        
+        // Store the new token
+        localStorage.setItem('token', newToken);
+        
+        // Retry the original request
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        // If refresh fails, clear storage and redirect
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login?session=expired';
+        return Promise.reject(refreshError);
+      }
+    }
+    
+    // Handle other error cases
+    if (error.response) {
+      switch (error.response.status) {
+        case 403: // Forbidden
+          console.error('Access forbidden:', error.response.data);
+          break;
+          
+        case 429: // Rate limited
+          console.error('Rate limited:', error.response.data);
+          break;
+          
+        case 500: // Server error
+          console.error('Server error:', error.response.data);
+          break;
+          
+        default:
+          console.error('API Error:', error.response.data);
+      }
+      
+      // Return a consistent error format
+      return Promise.reject({
+        status: error.response.status,
+        message: error.response.data?.message || 'An error occurred',
+        data: error.response.data
+      });
+    } else if (error.request) {
+      // Network errors
+      return Promise.reject({
+        status: 0,
+        message: 'Network error - please check your connection'
+      });
+    } else {
+      // Configuration errors
+      return Promise.reject({
+        status: -1,
+        message: 'Request configuration error'
+      });
+    }
+  }
+);
 
-// --- Item Endpoints (from item_bp) ---
-export const createItem = (itemData) => api.post('/items', itemData);
-export const getItems = () => api.get('/items');
+// Helper function for cookies
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+}
 
-// --- Request Endpoints (from request_bp) ---
-export const createRequest = (item_id) => api.post('/requests', { item_id });
-export const getSentRequests = () => api.get('/requests/sent');
-export const getReceivedRequests = () => api.get('/requests/received');
-export const updateRequestStatus = (request_id, status) => api.put(`/requests/${request_id}/status`, { status });
+// Auth API with enhanced error handling
+export const authAPI = {
+  login: async (credentials) => {
+    try {
+      const response = await api.post('/login', credentials);
+      return {
+        success: true,
+        data: response.data,
+        headers: response.headers
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Login failed' }
+      };
+    }
+  },
+  
+  logout: async () => {
+    try {
+      await api.post('/logout');
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Logout failed' }
+      };
+    }
+  },
+  
+  register: async (userData) => {
+    try {
+      const response = await api.post('/register', userData);
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Registration failed' }
+      };
+    }
+  },
+  
+  refreshToken: async () => {
+    try {
+      const response = await api.post('/refresh-token');
+      return {
+        success: true,
+        token: response.data.access_token
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Token refresh failed' }
+      };
+    }
+  },
+  
+  getCurrentUser: async () => {
+    try {
+      const response = await api.get('/users/me');
+      return {
+        success: true,
+        user: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Failed to fetch user' }
+      };
+    }
+  }
+};
 
+// Enhanced items API
+export const itemsAPI = {
+  getAllItems: async (params = {}) => {
+    try {
+      const response = await api.get('/items', { params });
+      return {
+        success: true,
+        items: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data || { message: 'Failed to fetch items' }
+      };
+    }
+  },
+  
+  // ... other item methods with the same pattern ...
+};
 
-// --- Admin Endpoints (from admin_bp) ---
-export const getAllUsers = () => api.get('/admin/users');
-export const createAdminUser = (userData) => api.post('/admin/create_admin_user', userData);
-export const adminGetAllRequests = () => api.get('/admin/requests');
-export const adminDeleteRequest = (request_id) => api.delete(`/admin/requests/${request_id}`);
-
+// Consistent error handler
+export const handleAPIError = (error) => {
+  if (error.response) {
+    return error.response.data?.message || 
+           error.response.statusText || 
+           `Request failed with status ${error.response.status}`;
+  }
+  return error.message || 'An unexpected error occurred';
+};
 
 export default api;
