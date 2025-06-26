@@ -4,18 +4,23 @@ from flask_jwt_extended import JWTManager
 from backend.extensions import db, migrate, bcrypt
 from backend.config import Config
 import logging
+import os
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-
-    # Initialize extensions
+    
+    # Configure database path for migrations
+    if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.dirname(__file__), '..', 'site.db')}"
+    
+    # Initialize extensions with proper paths
     db.init_app(app)
-    migrate.init_app(app, db)
+    migrate.init_app(app, db, directory=os.path.join(os.path.dirname(__file__), '..', 'migrations'))
     jwt = JWTManager(app)
     bcrypt.init_app(app)
 
-    # Configure CORS
+    # Configure CORS (keep your existing CORS configuration)
     CORS(app, resources={
         r"/api/*": {
             "origins": [
