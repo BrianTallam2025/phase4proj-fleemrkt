@@ -32,6 +32,7 @@ jwt = JWTManager(app)
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:5173",
     "https://phase4proj-fleemrkt.vercel.app"
+    "https://phase4proj-fleemrkt-dfhzgeqxl-tallams-projects.vercel.app"
 ]}}, supports_credentials=True)
 
 migrate = Migrate(app, db)
